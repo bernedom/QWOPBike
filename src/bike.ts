@@ -19,8 +19,8 @@ export interface PartInfo {
 
 export const PART_INFO: Record<PartId, PartInfo> = {
   wheels: { name: "Wheels", effect: "grip & wobble" },
-  engine: { name: "Engine", effect: "power & top speed" },
-  chain: { name: "Chain", effect: "throttle lag & sputter" },
+  engine: { name: "Engine", effect: "power, top speed & stalling" },
+  chain: { name: "Chain", effect: "throttle lag, sputter & mixed-up pedals" },
   suspension: { name: "Suspension", effect: "bounce & landing" },
   handlebar: { name: "Handlebar", effect: "lean precision & input delay" },
 };
@@ -48,6 +48,13 @@ export interface BikeStats {
   inputDelayMs: number;
   /** Handlebar mounted backwards: O and P are swapped. */
   leanSwapped: boolean;
+  /** Chain on wrong: gas (Q) and brake (W) are swapped. */
+  pedalsSwapped: boolean;
+  /**
+   * Engine so bad it stalls: the gas key has to be tapped this many times to
+   * kick it into life before holding it does anything (0 = starts normally).
+   */
+  kickTaps: number;
 }
 
 export interface Bike {
@@ -64,6 +71,10 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Score below which the handlebar ends up mounted backwards. */
 export const HANDLEBAR_SWAP_THRESHOLD = 0.2;
+/** Score below which the chain swaps gas and brake. */
+export const CHAIN_SWAP_THRESHOLD = 0.2;
+/** Score below which the engine stalls and must be kicked into life. */
+export const ENGINE_STALL_THRESHOLD = 0.2;
 
 export function deriveStats(raw: PartScores): BikeStats {
   const s = Object.fromEntries(PARTS.map((p) => [p, clamp01(raw[p])])) as PartScores;
@@ -80,6 +91,9 @@ export function deriveStats(raw: PartScores): BikeStats {
     leanTorque: lerp(15, 10, s.handlebar),
     inputDelayMs: lerp(220, 0, s.handlebar),
     leanSwapped: s.handlebar < HANDLEBAR_SWAP_THRESHOLD,
+    pedalsSwapped: s.chain < CHAIN_SWAP_THRESHOLD,
+    // 3 taps when barely broken, 5 when completely shot.
+    kickTaps: s.engine < ENGINE_STALL_THRESHOLD ? 3 + Math.round(2 * (1 - s.engine / ENGINE_STALL_THRESHOLD)) : 0,
   };
 }
 
@@ -140,4 +154,18 @@ export function damageBike(bike: Bike, rng: () => number = Math.random): CrashDa
   const after = Math.max(0, before - CRASH_DAMAGE);
   const scores = { ...bike.scores, [part]: after };
   return { bike: { ...buildBike(scores), builtAt: bike.builtAt }, part, before, after };
+}
+
+/** Human-readable list of the nasty side effects this bike has. */
+export function bikeIssues(stats: BikeStats): string[] {
+  const issues: string[] = [];
+  if (stats.kickTaps > 0) {
+    issues.push(`Engine stalls: tap ${stats.pedalsSwapped ? "W" : "Q"} ${stats.kickTaps}× to start it`);
+  }
+  if (stats.pedalsSwapped) issues.push("Chain on wrong: Q and W swapped");
+  if (stats.leanSwapped) issues.push("Handlebar backwards: O and P swapped");
+  if (stats.sputterRate > 0.8) issues.push("Engine sputters");
+  if (stats.wobble > 1) issues.push("Wheels wobble");
+  if (stats.inputDelayMs > 120) issues.push("Steering lags");
+  return issues;
 }

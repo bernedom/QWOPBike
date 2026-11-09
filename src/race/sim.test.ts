@@ -68,3 +68,48 @@ describe("RaceSim", () => {
     expect(sim.lean).toBe(-1);
   });
 });
+
+describe("broken parts", () => {
+  const press = (sim: RaceSim, input: Partial<RaceInput>, seconds: number) =>
+    run(sim, () => ({ ...NO_INPUT, ...input }), seconds);
+
+  it("a bad chain swaps gas and brake", () => {
+    const stats = deriveStats({ ...uniform(1), chain: 0 });
+    expect(stats.pedalsSwapped).toBe(true);
+    const q = press(new RaceSim(stats, { rng: mulberry32(1) }), { throttle: true }, 1);
+    expect(q.distance).toBeLessThan(0.3);
+    const w = press(new RaceSim(stats, { rng: mulberry32(1) }), { brake: true }, 1.5);
+    expect(w.throttle).toBeGreaterThan(0);
+  });
+
+  it("a stalled engine ignores holding gas until it's tapped enough times", () => {
+    const stats = deriveStats({ ...uniform(1), engine: 0 });
+    expect(stats.kickTaps).toBe(5);
+    const sim = new RaceSim(stats);
+    press(sim, { throttle: true }, 1);
+    expect(sim.engineRunning).toBe(false);
+    expect(sim.distance).toBeLessThan(0.3);
+    press(sim, {}, 0.1);
+    for (let i = 0; i < stats.kickTaps - 1; i++) {
+      press(sim, { throttle: true }, 0.1);
+      press(sim, {}, 0.1);
+    }
+    expect(sim.engineRunning).toBe(false);
+    press(sim, { throttle: true }, 1);
+    expect(sim.engineRunning).toBe(true);
+    expect(sim.distance).toBeGreaterThan(0.5);
+    // Off the gas for a while: it dies again.
+    press(sim, {}, 1);
+    expect(sim.engineRunning).toBe(false);
+  });
+
+  it("slow taps don't count", () => {
+    const stats = deriveStats({ ...uniform(1), engine: 0 });
+    const sim = new RaceSim(stats);
+    for (let i = 0; i < 8; i++) {
+      press(sim, { throttle: true }, 0.05);
+      press(sim, {}, 0.8);
+    }
+    expect(sim.engineRunning).toBe(false);
+  });
+});

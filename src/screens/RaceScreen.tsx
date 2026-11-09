@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { EngineSound, playCrash, playHappyBirthday } from "../audio";
-import { damageBike, isWrecked, PART_INFO, verdict, type Bike, type CrashDamage } from "../bike";
+import {
+  bikeIssues,
+  damageBike,
+  isWrecked,
+  PART_INFO,
+  PARTS,
+  verdict,
+  type Bike,
+  type CrashDamage,
+} from "../bike";
 import { RaceRenderer } from "../race/render";
 import { DT, RaceSim, type CrashReason, type RaceInput } from "../race/sim";
 
@@ -144,6 +153,8 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
           throttle: sim.throttle,
           rpm: Math.abs(sim.rearWheel.getAngularVelocity()) / sim.stats.maxWheelSpeed,
           sputtering: sim.sputtering,
+          running: sim.engineRunning,
+          kicks: sim.kicks,
         });
       } else {
         engine.stop();
@@ -210,12 +221,13 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
       <div className="race-topbar">
         <span>
           Attempt #{attempt} · Bike {bike.grade}
-          {bike.stats.leanSwapped && <span className="warn"> · handlebar backwards!</span>}
         </span>
         <button className="ghost" onClick={onMenu}>
           Menu
         </button>
       </div>
+
+      <BikePanel bike={bike} />
 
       {(["left", "right"] as const).map((side) => (
         <div key={side} className={`pad pad-${side}`}>
@@ -273,6 +285,36 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Top-right overlay: part condition + the bike's quirks. */
+function BikePanel({ bike }: { bike: Bike }) {
+  const issues = bikeIssues(bike.stats);
+  return (
+    <div className="bike-panel">
+      <div className="bike-panel-head">
+        Bike <span className={`grade-${bike.grade}`}>{bike.grade}</span>
+      </div>
+      {PARTS.map((p) => {
+        const s = bike.scores[p];
+        return (
+          <div key={p} className="bike-panel-row">
+            <span>{PART_INFO[p].name}</span>
+            <div className="meter">
+              <div style={{ width: `${Math.max(3, s * 100)}%` }} />
+            </div>
+          </div>
+        );
+      })}
+      {issues.length > 0 && (
+        <ul className="bike-panel-issues">
+          {issues.map((i) => (
+            <li key={i}>⚠ {i}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

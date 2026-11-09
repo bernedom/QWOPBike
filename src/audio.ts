@@ -255,12 +255,18 @@ export interface EngineState {
   /** 0..1 rear wheel speed relative to the bike's top speed. */
   rpm: number;
   sputtering: boolean;
+  /** False while a bad engine is stalled. */
+  running: boolean;
+  /** Kick-start taps so far while stalled. */
+  kicks: number;
 }
 
 /** One running engine sound. Create when a race starts, `stop()` when it ends. */
 export class EngineSound {
   private readonly nodes: { osc: OscillatorNode[]; gain: GainNode; filter: BiquadFilterNode; chop: GainNode } | null;
   private wasSputtering = false;
+  private lastKicks = 0;
+  private wasRunning = true;
   private stopped = false;
 
   constructor() {
@@ -295,7 +301,7 @@ export class EngineSound {
     chop.connect(filter).connect(gain).connect(engineBus);
     for (const o of [main, sub, firing]) o.start(t);
     this.nodes = { osc: [main, sub, firing], gain, filter, chop };
-    this.update({ throttle: 0, rpm: 0, sputtering: false });
+    this.update({ throttle: 0, rpm: 0, sputtering: false, running: true, kicks: 0 });
   }
 
   update(s: EngineState) {
@@ -307,11 +313,20 @@ export class EngineSound {
     sub.frequency.setTargetAtTime(base * 0.5, t, 0.05);
     firing.frequency.setTargetAtTime(base * 0.25, t, 0.05);
     this.nodes.filter.frequency.setTargetAtTime(350 + 2200 * s.throttle + 600 * s.rpm, t, 0.04);
-    // Quiet idle, loud on the gas.
-    this.nodes.gain.gain.setTargetAtTime(0.06 + 0.34 * s.throttle, t, 0.04);
+    // Quiet idle, loud on the gas, silent when stalled.
+    const vol = s.running ? 0.06 + 0.34 * s.throttle : 0;
+    this.nodes.gain.gain.setTargetAtTime(vol, t, s.running ? 0.04 : 0.15);
 
     if (s.sputtering && !this.wasSputtering) backfire();
     this.wasSputtering = s.sputtering;
+    // Each kick-start attempt coughs; starting up gives a bigger bang.
+    if (s.kicks > this.lastKicks) crank(0.5);
+    if (s.running && !this.wasRunning) {
+      backfire();
+      crank(1);
+    }
+    this.lastKicks = s.kicks;
+    this.wasRunning = s.running;
   }
 
   stop() {
@@ -322,6 +337,25 @@ export class EngineSound {
     this.nodes.gain.gain.setTargetAtTime(0, t, 0.15);
     for (const o of this.nodes.osc) o.stop(t + 1);
   }
+}
+
+/** The engine trying to turn over: a short, low, rough "chug". */
+function crank(vol: number) {
+  const c = ctx!;
+  const t = c.currentTime;
+  const o = c.createOscillator();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(70, t);
+  o.frequency.exponentialRampToValueAtTime(30, t + 0.18);
+  const f = c.createBiquadFilter();
+  f.type = "lowpass";
+  f.frequency.value = 500;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.5 * vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+  o.connect(f).connect(g).connect(engineBus);
+  o.start(t);
+  o.stop(t + 0.25);
 }
 
 /** A short low "pop" when the chain/engine sputters. */

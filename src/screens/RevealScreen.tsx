@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { CONFIG, revealMessage } from "../config";
+import { useMemo, useState } from "react";
+import { CONFIG, revealMessage, revealPassword } from "../config";
 import type { PlayerStats } from "../storage";
 
 interface Props {
@@ -10,6 +10,14 @@ interface Props {
 const CONFETTI_COLORS = ["#ffd23f", "#ff7a1a", "#3bceac", "#ee4266", "#540d6e", "#5aa9e6"];
 
 export function RevealScreen({ stats, onMenu }: Props) {
+  const password = revealPassword();
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(password).then(
+      () => setCopied(true),
+      () => {},
+    );
+  };
   const confetti = useMemo(
     () =>
       Array.from({ length: 80 }, (_, i) => ({
@@ -42,6 +50,8 @@ export function RevealScreen({ stats, onMenu }: Props) {
       <div className="card present">
         <div className="present-icon">🎁</div>
         <p className="present-message">{revealMessage()}</p>
+        <div className="password">{password}</div>
+        <button onClick={copy}>{copied ? "✓ Kopiert" : "📋 Passwort kopieren"}</button>
       </div>
       <p className="muted small">
         It only took {stats.attempts} attempt{stats.attempts === 1 ? "" : "s"} and {stats.bikesBuilt} bike

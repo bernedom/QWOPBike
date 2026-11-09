@@ -505,3 +505,72 @@ kbd {
 .damage {
   margin-top: -0.4em;
 }
+
+.bike-panel {
+  position: absolute;
+  top: 110px;
+  right: 16px;
+  width: 270px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: rgba(20, 18, 32, 0.78);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+.bike-panel-head {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.bike-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 3px 0;
+}
+.bike-panel .meter {
+  width: 100px;
+  height: 8px;
+}
+.bike-panel .meter > div {
+  background-size: 100px 100%;
+}
+.bike-panel-issues {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  color: #ff6b85;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.bike-panel-issues li + li {
+  margin-top: 4px;
+}
+@media (max-width: 520px) {
+  .bike-panel {
+    top: 100px;
+    width: 190px;
+    font-size: 0.75rem;
+  }
+  .bike-panel .meter {
+    width: 64px;
+  }
+  .bike-panel .meter > div {
+    background-size: 64px 100%;
+  }
+}
+
+.password {
+  margin: 0.6em auto 0.8em;
+  padding: 0.3em 0.9em;
+  width: fit-content;
+  font-family: ui-monospace, monospace;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #1b1b1b;
+  background: var(--accent);
+  border-radius: var(--radius);
+  user-select: all;
+}

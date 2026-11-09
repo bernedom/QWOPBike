@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   buildBike,
-  HANDLEBAR_SWAP_THRESHOLD,
+  bikeIssues,
   isWrecked,
   PART_INFO,
   PARTS,
@@ -204,9 +204,13 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
               ))}
             </tbody>
           </table>
-          {bike.scores.handlebar < HANDLEBAR_SWAP_THRESHOLD && (
-            <p className="warn">⚠ The handlebar is on backwards: O and P are swapped!</p>
-          )}
+          {bikeIssues(bike.stats)
+            .slice(0, 3)
+            .map((issue) => (
+              <p key={issue} className="warn">
+                ⚠ {issue}
+              </p>
+            ))}
           {isWrecked(bike) && <p className="warn">Nothing holds together. This bike won't ride, try again!</p>}
           <div className="row">
             {!isWrecked(bike) && (

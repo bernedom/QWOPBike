@@ -39,6 +39,10 @@ export type RaceStatus = "racing" | "crashed" | "finished";
 export type CrashReason = "head" | "flipped" | "fell";
 
 export const DT = 1 / 60;
+/** Max time between kick-start taps (s). */
+const KICK_WINDOW = 0.6;
+/** A stalling engine dies again after this long off the gas (s). */
+const STALL_AFTER = 0.7;
 export const WHEEL_RADIUS = 0.38;
 const WHEEL_BASE = 1.5;
 
@@ -82,6 +86,14 @@ export class RaceSim {
   /** Effective lean after delay/swap: -1 forward, 0, +1 back. */
   lean = 0;
   sputtering = false;
+  /** Engine is running (always true unless the engine is bad enough to stall). */
+  engineRunning: boolean;
+  /** Kick-start taps so far while stalled. */
+  kicks = 0;
+
+  private prevGas = false;
+  private sinceKick = 0;
+  private gasOffTime = 0;
 
   private sputterLeft = 0;
   private flipTime = 0;
@@ -95,6 +107,7 @@ export class RaceSim {
     this.rng = opts.rng ?? Math.random;
     const delaySteps = Math.round(stats.inputDelayMs / 1000 / DT);
     this.leanBuffer = new Array(delaySteps).fill(0);
+    this.engineRunning = stats.kickTaps === 0;
 
     this.world = new World({ gravity: { x: 0, y: -10 } });
 
@@ -218,18 +231,48 @@ export class RaceSim {
     const s = this.stats;
     this.time += DT;
 
+    // --- Chain on wrong: gas and brake swapped ---
+    const gasKey = s.pedalsSwapped ? input.brake : input.throttle;
+    const brakeKey = s.pedalsSwapped ? input.throttle : input.brake;
+
+    // --- Stalling engine: tap gas repeatedly to kick it into life ---
+    if (s.kickTaps > 0) {
+      this.sinceKick += DT;
+      if (!this.engineRunning) {
+        if (gasKey && !this.prevGas) {
+          this.kicks = this.sinceKick < KICK_WINDOW ? this.kicks + 1 : 1;
+          this.sinceKick = 0;
+          if (this.kicks >= s.kickTaps) {
+            this.engineRunning = true;
+            this.kicks = 0;
+          }
+        } else if (this.sinceKick >= KICK_WINDOW) {
+          this.kicks = 0;
+        }
+      } else {
+        // Let go of the gas for too long and it dies again.
+        this.gasOffTime = gasKey ? 0 : this.gasOffTime + DT;
+        if (this.gasOffTime > STALL_AFTER) {
+          this.engineRunning = false;
+          this.gasOffTime = 0;
+        }
+      }
+    }
+    const gas = gasKey && this.engineRunning;
+    this.prevGas = gasKey;
+
     // --- Throttle with lag + sputter (chain quality) ---
     if (this.sputterLeft > 0) {
       this.sputterLeft -= DT;
-    } else if (input.throttle && this.rng() < s.sputterRate * DT) {
+    } else if (gas && this.rng() < s.sputterRate * DT) {
       this.sputterLeft = 0.2 + this.rng() * 0.35;
     }
     this.sputtering = this.sputterLeft > 0;
-    const target = input.throttle && !this.sputtering ? 1 : 0;
+    const target = gas && !this.sputtering ? 1 : 0;
     this.throttle += (target - this.throttle) * (1 - Math.exp(-DT / s.throttleLag));
 
     // --- Brake / motor ---
-    if (input.brake) {
+    if (brakeKey) {
       this.rearJoint.setMotorSpeed(0);
       this.rearJoint.setMaxMotorTorque(BRAKE_TORQUE);
       this.frontJoint.enableMotor(true);

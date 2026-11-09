@@ -13,15 +13,22 @@ export const CONFIG = {
   tagline: "Your birthday present is waiting at the finish line.",
   /** Title on the win screen. */
   revealTitle: "Happy Birthday!",
-  /** base64-encoded UTF-8 text: "Dein Preis: Besuch der Masters of Dirt …" */
-  revealMessageB64:
-    "RGVpbiBQcmVpczogQmVzdWNoIGRlciBNYXN0ZXJzIG9mIERpcnQgaW0gSGFsbGVuc3RhZGlvbiBhbSAxNy40LjIwMjc=",
+  /**
+   * Shown on the win screen above the password (base64-encoded UTF-8):
+   * "Geschafft! Schick mir dieses Passwort, dann bekommst du den Link zu deinem Preis:"
+   */
+  revealMessageB64: "R2VzY2hhZmZ0ISBTY2hpY2sgbWlyIGRpZXNlcyBQYXNzd29ydCwgZGFubiBiZWtvbW1zdCBkdSBkZW4gTGluayB6dSBkZWluZW0gUHJlaXM6",
+  /** The password the player sends you to get the prize link (base64): "Gurkensalat" */
+  passwordB64: "R3Vya2Vuc2FsYXQ=",
 };
 
-export function revealMessage(): string {
+function decode(b64: string, field: string): string {
   try {
-    return decodeURIComponent(escape(atob(CONFIG.revealMessageB64)));
+    return decodeURIComponent(escape(atob(b64)));
   } catch {
-    return "(could not decode the message — check revealMessageB64 in src/config.ts)";
+    return `(could not decode — check ${field} in src/config.ts)`;
   }
 }
+
+export const revealMessage = () => decode(CONFIG.revealMessageB64, "revealMessageB64");
+export const revealPassword = () => decode(CONFIG.passwordB64, "passwordB64");

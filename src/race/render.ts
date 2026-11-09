@@ -643,11 +643,26 @@ export class RaceRenderer {
     ctx.shadowBlur = 4;
     ctx.fillText(`${sim.time.toFixed(1)} s`, pad, pad + 22);
     ctx.fillText(`${sim.distance.toFixed(0)} / ${sim.trackLength.toFixed(0)} m`, pad, pad + 44);
-    ctx.textAlign = "right";
-    ctx.fillText(`${(sim.speed * 3.6).toFixed(0)} km/h`, w - pad, pad + 22);
-    if (sim.sputtering) {
-      ctx.fillStyle = "#ff5b5b";
-      ctx.fillText("*sputter*", w - pad, pad + 44);
+    ctx.fillText(`${(sim.speed * 3.6).toFixed(0)} km/h`, pad, pad + 66);
+    // Status messages go big in the middle (the top right holds the bike stats panel).
+    ctx.textAlign = "center";
+    ctx.font = `900 ${Math.round(Math.max(22, Math.min(40, w / 24)))}px system-ui, sans-serif`;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#1b1b1b";
+    const say = (text: string, color: string, y: number) => {
+      ctx.strokeText(text, w / 2, y);
+      ctx.fillStyle = color;
+      ctx.fillText(text, w / 2, y);
+    };
+    if (sim.status === "racing" && !sim.engineRunning) {
+      const key = sim.stats.pedalsSwapped ? "W" : "Q";
+      const dots = "●".repeat(sim.kicks) + "○".repeat(sim.stats.kickTaps - sim.kicks);
+      // Pulse so it's hard to miss.
+      const pulse = 0.5 + 0.5 * Math.sin(sim.time * 10);
+      say(`Engine stalled! Tap ${key} fast`, pulse > 0.5 ? "#ff5b5b" : "#ffd23f", pad + 30);
+      say(dots, "#ffd23f", pad + 30 + Math.max(28, Math.min(48, w / 20)));
+    } else if (sim.sputtering) {
+      say("*sputter*", "#ff5b5b", pad + 30);
     }
     ctx.shadowBlur = 0;
   }
