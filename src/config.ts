@@ -13,9 +13,9 @@ export const CONFIG = {
   tagline: "Your birthday present is waiting at the finish line.",
   /** Title on the win screen. */
   revealTitle: "Happy Birthday!",
-  /** base64-encoded UTF-8 text. Decodes to a placeholder — replace it. */
+  /** base64-encoded UTF-8 text: "Dein Preis: Besuch der Masters of Dirt …" */
   revealMessageB64:
-    "WW91ciBwcmVzZW50IGlzIGhpZGRlbiBiZWhpbmQgdGhlIGJvb2tzaGVsZi4gKFJlcGxhY2UgdGhpcyB0ZXh0IGluIHNyYy9jb25maWcudHMp",
+    "RGVpbiBQcmVpczogQmVzdWNoIGRlciBNYXN0ZXJzIG9mIERpcnQgaW0gSGFsbGVuc3RhZGlvbiBhbSAxNy40LjIwMjc=",
 };
 
 export function revealMessage(): string {

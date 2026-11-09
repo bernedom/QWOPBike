@@ -14,7 +14,8 @@ import { BikeDiagram } from "./BikeDiagram";
 /**
  * Assembly mini-game v1: "Torque wrench".
  * For every part a needle sweeps across a gauge; stop it in the green zone.
- * Each part gets faster and the zone narrower. The score per part feeds the
+ * The green zone drifts back and forth and breathes (grows/shrinks), and each
+ * part gets faster, with a narrower, livelier zone. The score per part feeds the
  * bike's handling (see bike.ts).
  */
 
@@ -24,12 +25,32 @@ interface Props {
   onMenu: () => void;
 }
 
-const LEVELS: Record<PartId, { speed: number; zone: number; hint: string }> = {
-  wheels: { speed: 2.2, zone: 0.11, hint: "Tighten the axle nuts" },
-  engine: { speed: 2.8, zone: 0.095, hint: "Bolt the engine into the frame" },
-  chain: { speed: 3.4, zone: 0.08, hint: "Tension the chain" },
-  suspension: { speed: 4.0, zone: 0.07, hint: "Set the spring preload" },
-  handlebar: { speed: 4.8, zone: 0.06, hint: "Clamp the handlebar (the right way round!)" },
+interface Level {
+  /** Needle sweep speed. */
+  speed: number;
+  /** Average zone width (fraction of the gauge). */
+  zone: number;
+  /** How fast the zone drifts sideways. */
+  drift: number;
+  /** How fast the zone grows/shrinks, and by how much (fraction of `zone`). */
+  pulse: number;
+  pulseAmount: number;
+  hint: string;
+}
+
+const LEVELS: Record<PartId, Level> = {
+  wheels: { speed: 2.4, zone: 0.11, drift: 0.7, pulse: 1.6, pulseAmount: 0.4, hint: "Tighten the axle nuts" },
+  engine: { speed: 3.0, zone: 0.095, drift: 0.9, pulse: 2.0, pulseAmount: 0.45, hint: "Bolt the engine into the frame" },
+  chain: { speed: 3.6, zone: 0.085, drift: 1.1, pulse: 2.4, pulseAmount: 0.5, hint: "Tension the chain" },
+  suspension: { speed: 4.2, zone: 0.075, drift: 1.3, pulse: 2.9, pulseAmount: 0.55, hint: "Set the spring preload" },
+  handlebar: {
+    speed: 5.0,
+    zone: 0.07,
+    drift: 1.6,
+    pulse: 3.4,
+    pulseAmount: 0.6,
+    hint: "Clamp the handlebar (the right way round!)",
+  },
 };
 
 /** Score for stopping the needle at `pos` with the zone centred at `center`. */
@@ -44,9 +65,11 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
   const [scores, setScores] = useState<Partial<PartScores>>({});
   const [lastHit, setLastHit] = useState<{ part: PartId; score: number } | null>(null);
   const [bike, setBike] = useState<Bike | null>(null);
-  const [zoneCenter, setZoneCenter] = useState(() => 0.2 + Math.random() * 0.6);
   const needleRef = useRef<HTMLDivElement>(null);
+  const zoneRef = useRef<HTMLDivElement>(null);
   const posRef = useRef(0.5);
+  /** Current zone centre and width; animated together with the needle. */
+  const zoneState = useRef({ center: 0.5, width: 0.1 });
   const lockedRef = useRef(false);
 
   const part = PARTS[index] as PartId | undefined;
@@ -58,6 +81,8 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
     lockedRef.current = false;
     let raf = 0;
     let phase = Math.random() * Math.PI * 2;
+    let zonePhase = Math.random() * Math.PI * 2;
+    let pulsePhase = Math.random() * Math.PI * 2;
     let last = performance.now();
     const tick = (now: number) => {
       const dt = Math.max(0, (now - last) / 1000);
@@ -67,6 +92,19 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
         // Sine sweep, slightly irregular so it can't be timed by rhythm alone.
         posRef.current = 0.5 + 0.5 * Math.sin(phase + 0.25 * Math.sin(phase * 0.37));
         if (needleRef.current) needleRef.current.style.left = `${posRef.current * 100}%`;
+
+        zonePhase += dt * level.drift;
+        pulsePhase += dt * level.pulse;
+        const width = level.zone * (1 + level.pulseAmount * Math.sin(pulsePhase));
+        // Two mixed sines so the drift doesn't settle into a predictable rhythm.
+        const wander = 0.75 * Math.sin(zonePhase) + 0.25 * Math.sin(zonePhase * 2.3 + 1);
+        const range = 0.5 - width / 2 - 0.02;
+        const center = 0.5 + wander * range;
+        zoneState.current = { center, width };
+        if (zoneRef.current) {
+          zoneRef.current.style.left = `${(center - width / 2) * 100}%`;
+          zoneRef.current.style.width = `${width * 100}%`;
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -77,12 +115,12 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
   const lock = () => {
     if (!part || !level || lockedRef.current) return;
     lockedRef.current = true;
-    const score = scoreFor(posRef.current, zoneCenter, level.zone / 2);
+    const { center, width } = zoneState.current;
+    const score = scoreFor(posRef.current, center, width / 2);
     const next = { ...scores, [part]: score };
     setScores(next);
     setLastHit({ part, score });
     window.setTimeout(() => {
-      setZoneCenter(0.2 + Math.random() * 0.6);
       if (index + 1 >= PARTS.length) {
         const built = buildBike(next as PartScores);
         setBike(built);
@@ -132,10 +170,7 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
             Part {index + 1}/{PARTS.length}: <b>{PART_INFO[part].name}</b> — {level.hint}
           </p>
           <div className="gauge" onPointerDown={lock}>
-            <div
-              className="gauge-zone"
-              style={{ left: `${(zoneCenter - level.zone / 2) * 100}%`, width: `${level.zone * 100}%` }}
-            />
+            <div className="gauge-zone" ref={zoneRef} />
             <div className="gauge-needle" ref={needleRef} />
           </div>
           <p className="muted">

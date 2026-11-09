@@ -28,7 +28,11 @@ const C = {
   frameDark: "#c25200",
   tyre: "#1d1d1f",
   rim: "#b9bec7",
-  rider: "#2e4fd1",
+  rider: "#2e4fd1", // trousers
+  coat: "#141414",
+  coatEdge: "#3a3a3a",
+  hair: "#f2d16b",
+  hairDark: "#c9a443",
   helmet: "#e8e8e8",
   visor: "#222",
   skin: "#f2c39b",
@@ -278,13 +282,39 @@ export class RaceRenderer {
     const limb = scale * 0.11;
     line(hip, knee, limb, C.rider);
     line(knee, foot, limb, C.rider);
-    line(hip, shoulder, scale * 0.2, C.rider);
+    // Black coat: torso with a tail flapping over the seat, plus sleeves.
+    // A slightly lighter edge keeps it readable against dark backgrounds.
+    const coatTail = local(-0.42, 0.38 + Math.sin(sim.time * 14) * 0.03 * sim.throttle);
+    line(hip, coatTail, scale * 0.13, C.coatEdge);
+    line(hip, shoulder, scale * 0.24, C.coatEdge);
+    line(hip, coatTail, scale * 0.09, C.coat);
+    line(hip, shoulder, scale * 0.2, C.coat);
     const elbow: [number, number] = [
       (shoulder[0] + hand[0]) / 2,
       (shoulder[1] + hand[1]) / 2 + scale * 0.06,
     ];
-    line(shoulder, elbow, scale * 0.08, C.rider);
-    line(elbow, hand, scale * 0.08, C.rider);
+    line(shoulder, elbow, scale * 0.11, C.coatEdge);
+    line(elbow, hand, scale * 0.11, C.coatEdge);
+    line(shoulder, elbow, scale * 0.08, C.coat);
+    line(elbow, hand, scale * 0.08, C.coat);
+    ctx.fillStyle = C.skin;
+    ctx.beginPath();
+    ctx.arc(hand[0], hand[1], scale * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    // Blond hair sticking out the back of the helmet, blowing in the wind.
+    const flutter = Math.sin(sim.time * 18) * 0.03;
+    for (const [dy, len, w, col] of [
+      [-0.02, 0.26, 0.07, C.hairDark],
+      [0.03, 0.3, 0.06, C.hair],
+      [-0.07, 0.22, 0.05, C.hair],
+    ] as const) {
+      line(
+        local(-0.06 - lean * 1.2, 1.05 + dy),
+        local(-0.06 - lean * 1.2 - len, 1.0 + dy + flutter * (1 + dy * 10)),
+        scale * w,
+        col,
+      );
+    }
     // Helmet
     ctx.fillStyle = C.helmet;
     ctx.strokeStyle = "#999";
