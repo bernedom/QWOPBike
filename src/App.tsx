@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { isMuted, onMuteChange, setMuted } from "./audio";
 import { buildBike, PARTS, type Bike, type PartScores } from "./bike";
 import { AssemblyScreen } from "./screens/AssemblyScreen";
 import { RaceScreen } from "./screens/RaceScreen";
@@ -19,7 +20,43 @@ const devBike = devQuality
   ? buildBike(Object.fromEntries(PARTS.map((p) => [p, Number(devQuality)])) as PartScores)
   : null;
 
+function SoundToggle() {
+  const [muted, setMutedState] = useState(isMuted);
+  useEffect(() => {
+    const off = onMuteChange(setMutedState);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyM" && !e.repeat) setMuted(!isMuted());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      off();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+  return (
+    <button
+      className="ghost sound-toggle"
+      onClick={(e) => {
+        setMuted(!muted);
+        e.currentTarget.blur(); // keep Space/Enter for the game
+      }}
+      title="Toggle sound (M)"
+    >
+      {muted ? "🔇" : "🔊"} <kbd>M</kbd>
+    </button>
+  );
+}
+
 export function App() {
+  return (
+    <>
+      <Screens />
+      <SoundToggle />
+    </>
+  );
+}
+
+function Screens() {
   const [screen, setScreen] = useState<Screen>(devScreen ?? "title");
   const [bike, setBike] = useState<Bike | null>(() => devBike ?? loadBike() ?? (devScreen === "race" ? buildBike(Object.fromEntries(PARTS.map((p) => [p, 1])) as PartScores) : null));
   const [stats, setStats] = useState<PlayerStats>(() => loadStats());

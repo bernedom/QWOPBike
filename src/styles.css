@@ -492,3 +492,12 @@ kbd {
     rotate: 720deg;
   }
 }
+
+.sound-toggle {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  font-size: 0.85rem;
+}

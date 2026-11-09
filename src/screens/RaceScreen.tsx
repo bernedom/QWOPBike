@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { EngineSound } from "../audio";
 import type { Bike } from "../bike";
 import { RaceRenderer } from "../race/render";
 import { DT, RaceSim, type CrashReason, type RaceInput } from "../race/sim";
@@ -59,6 +60,7 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
     const ctx = canvas.getContext("2d")!;
     const sim = new RaceSim(bike.stats);
     const renderer = new RaceRenderer(sim);
+    const engine = new EngineSound();
     let raf = 0;
     let last = performance.now();
     let acc = 0;
@@ -113,6 +115,16 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
         }
       }
 
+      if (sim.status === "racing") {
+        engine.update({
+          throttle: sim.throttle,
+          rpm: Math.abs(sim.rearWheel.getAngularVelocity()) / sim.stats.maxWheelSpeed,
+          sputtering: sim.sputtering,
+        });
+      } else {
+        engine.stop();
+      }
+
       renderer.draw(ctx, canvas.clientWidth, canvas.clientHeight, dt, overlay);
       // Light up pressed keys without re-rendering React.
       for (const b of BUTTONS) {
@@ -124,6 +136,7 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
 
     return () => {
       cancelAnimationFrame(raf);
+      engine.stop();
       window.removeEventListener("resize", resize);
     };
   }, [bike]);
