@@ -1,11 +1,11 @@
+import { decodeSecret } from "./secret";
+
 /**
  * Everything personal lives here. Edit before deploying!
  *
- * Note: this is a client-side game, so anyone who opens the browser dev tools
- * can find this text. The message is lightly encoded (base64) so it doesn't
- * show up in plain text when skimming the bundle — that's all.
- * Generate an encoded message with:  btoa(unescape(encodeURIComponent("...")))
- * or in a shell:                     printf '%s' "..." | base64 -w0
+ * The win-screen message and password are obfuscated (see src/secret.ts) so
+ * they can't be read off the page source. Encode new ones with:
+ *   node scripts/encode.mjs "your text"
  */
 export const CONFIG = {
   playerName: "Lars",
@@ -18,22 +18,11 @@ export const CONFIG = {
   tagline: "Your birthday present is waiting at the finish line.",
   /** Title on the win screen. */
   revealTitle: "Happy Birthday!",
-  /**
-   * Shown on the win screen above the password (base64-encoded UTF-8):
-   * "Geschafft! Schick mir dieses Passwort, dann bekommst du den Link zu deinem Preis:"
-   */
-  revealMessageB64: "R2VzY2hhZmZ0ISBTY2hpY2sgbWlyIGRpZXNlcyBQYXNzd29ydCwgZGFubiBiZWtvbW1zdCBkdSBkZW4gTGluayB6dSBkZWluZW0gUHJlaXM6",
-  /** The password the player sends you to get the prize link (base64): "Gurkensalat" */
-  passwordB64: "R3Vya2Vuc2FsYXQ=",
+  /** Shown on the win screen above the password. Encode with: node scripts/encode.mjs "..." */
+  revealMessage: "3f40873708b5d02560b4517692d33c42856d76d0ed6f60b44b4b9fcb604c872475b5991470f1ba0382dd2929a5ca7bb0e4625aa9b647d58a2c6bb8ae58b0f61b648ae70f8c9c046fb0f2118df0345eee81",
+  /** The password the player sends you to get the prize link. Encode with: node scripts/encode.mjs "..." */
+  password: "3f50863f05bac52278f405",
 };
 
-function decode(b64: string, field: string): string {
-  try {
-    return decodeURIComponent(escape(atob(b64)));
-  } catch {
-    return `(could not decode — check ${field} in src/config.ts)`;
-  }
-}
-
-export const revealMessage = () => decode(CONFIG.revealMessageB64, "revealMessageB64");
-export const revealPassword = () => decode(CONFIG.passwordB64, "passwordB64");
+export const revealMessage = () => decodeSecret(CONFIG.revealMessage);
+export const revealPassword = () => decodeSecret(CONFIG.password);
