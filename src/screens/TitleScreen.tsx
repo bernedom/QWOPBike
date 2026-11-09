@@ -52,6 +52,8 @@ export function TitleScreen({ bike: savedBike, stats, onAssemble, onRace, onReve
         <br />
         Hit your head or flip over and you start again from the beginning, and every crash knocks a part
         loose. Once everything is broken, you need a new bike.
+        <br />
+        Reach the finish within <b>{CONFIG.timeLimit} seconds</b> to unlock your present.
       </p>
 
       {wrecked && <p className="warn">Your bike is a wreck. Build a new one!</p>}

@@ -114,6 +114,15 @@ function Screens() {
     [updateStats],
   );
 
+  const onSlowFinish = useCallback(
+    (time: number, tuned: Bike) => {
+      updateStats((s) => ({ ...s, bestTime: s.bestTime === null ? time : Math.min(s.bestTime, time) }));
+      setBike(tuned);
+      saveBike(tuned);
+    },
+    [updateStats],
+  );
+
   const onReset = useCallback(() => {
     if (!window.confirm("Forget your bike, attempts and progress?")) return;
     resetAll();
@@ -144,6 +153,7 @@ function Screens() {
           attempt={stats.attempts}
           onCrash={onCrash}
           onFinish={onFinish}
+          onSlowFinish={onSlowFinish}
           onRetry={startRace}
           onRebuild={toAssembly}
           onMenu={toTitle}

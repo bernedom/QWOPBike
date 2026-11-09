@@ -169,3 +169,12 @@ export function bikeIssues(stats: BikeStats): string[] {
   if (stats.inputDelayMs > 120) issues.push("Steering lags");
   return issues;
 }
+
+/** How much every part improves after a finish that was too slow. */
+export const TUNE_UP = 0.05;
+
+/** A slow finish still earns a tune-up: every part gets a bit better. */
+export function tuneBike(bike: Bike, amount = TUNE_UP): Bike {
+  const scores = Object.fromEntries(PARTS.map((p) => [p, Math.min(1, bike.scores[p] + amount)])) as PartScores;
+  return { ...buildBike(scores), builtAt: bike.builtAt };
+}

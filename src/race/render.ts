@@ -65,8 +65,12 @@ export class RaceRenderer {
   private camY = 0;
   private sim: RaceSim;
 
-  constructor(sim: RaceSim) {
+  /** Seconds allowed to reach the finish (shown in the HUD). */
+  private timeLimit: number;
+
+  constructor(sim: RaceSim, timeLimit = Infinity) {
     this.sim = sim;
+    this.timeLimit = timeLimit;
     const p = sim.chassis.getPosition();
     this.camX = p.x + 3;
     this.camY = p.y;
@@ -641,7 +645,17 @@ export class RaceRenderer {
     ctx.fillStyle = "#fff";
     ctx.shadowColor = "rgba(0,0,0,0.6)";
     ctx.shadowBlur = 4;
-    ctx.fillText(`${sim.time.toFixed(1)} s`, pad, pad + 22);
+    const over = sim.time > this.timeLimit;
+    const left = this.timeLimit - sim.time;
+    ctx.fillStyle = over ? "#ff5b5b" : left < 10 && sim.status === "racing" ? "#ffd23f" : "#fff";
+    ctx.fillText(
+      Number.isFinite(this.timeLimit)
+        ? `⏱ ${sim.time.toFixed(1)} / ${this.timeLimit} s${over ? " — too slow!" : ""}`
+        : `${sim.time.toFixed(1)} s`,
+      pad,
+      pad + 22,
+    );
+    ctx.fillStyle = "#fff";
     ctx.fillText(`${sim.distance.toFixed(0)} / ${sim.trackLength.toFixed(0)} m`, pad, pad + 44);
     ctx.fillText(`${(sim.speed * 3.6).toFixed(0)} km/h`, pad, pad + 66);
     // Status messages go big in the middle (the top right holds the bike stats panel).

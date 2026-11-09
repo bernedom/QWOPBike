@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBike, CRASH_DAMAGE, damageBike, isWrecked, PARTS, type PartScores } from "./bike";
+import { buildBike, CRASH_DAMAGE, damageBike, isWrecked, PARTS, tuneBike, TUNE_UP, type PartScores } from "./bike";
 
 const uniform = (v: number) => Object.fromEntries(PARTS.map((p) => [p, v])) as PartScores;
 
@@ -30,5 +30,13 @@ describe("crash damage", () => {
     }
     expect(crashes).toBe(PARTS.length * Math.ceil(1 / CRASH_DAMAGE));
     expect(damageBike(bike).part).toBeNull();
+  });
+});
+
+describe("tune-up", () => {
+  it("improves every part, capped at perfect", () => {
+    const bike = tuneBike(buildBike({ ...uniform(0.5), engine: 0.98 }));
+    expect(bike.scores.wheels).toBeCloseTo(0.5 + TUNE_UP);
+    expect(bike.scores.engine).toBe(1);
   });
 });

@@ -9,6 +9,11 @@
  */
 export const CONFIG = {
   playerName: "Lars",
+  /**
+   * Seconds allowed to reach the finish. Slower finishes don't unlock the
+   * present but tune the bike up. (A careful bot on a perfect bike takes ~32–42 s.)
+   */
+  timeLimit: 50,
   /** Shown on the title screen. */
   tagline: "Your birthday present is waiting at the finish line.",
   /** Title on the win screen. */

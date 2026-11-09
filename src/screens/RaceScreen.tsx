@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { EngineSound, playCrash, playHappyBirthday } from "../audio";
+import { EngineSound, playCrash, playHappyBirthday, playTooSlow } from "../audio";
+import { CONFIG } from "../config";
 import {
   bikeIssues,
   damageBike,
   isWrecked,
   PART_INFO,
   PARTS,
+  TUNE_UP,
+  tuneBike,
   verdict,
   type Bike,
   type CrashDamage,
@@ -19,12 +22,14 @@ interface Props {
   /** Called after a crash with the (now damaged) bike. */
   onCrash: (distance: number, damage: CrashDamage) => void;
   onFinish: (time: number) => void;
+  /** Reached the goal, but outside the time limit: the bike gets a tune-up. */
+  onSlowFinish: (time: number, tuned: Bike) => void;
   onRetry: () => void;
   onRebuild: () => void;
   onMenu: () => void;
 }
 
-type Phase = "countdown" | "racing" | "crashed" | "finished";
+type Phase = "countdown" | "racing" | "crashed" | "finished" | "slow";
 
 const KEYS: Record<string, keyof RaceInput> = {
   KeyQ: "throttle",
@@ -53,7 +58,16 @@ const CRASH_LINES: Record<CrashReason, string[]> = {
 
 const COUNTDOWN = 2.4;
 
-export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry, onRebuild, onMenu }: Props) {
+export function RaceScreen({
+  bike: bikeProp,
+  attempt,
+  onCrash,
+  onFinish,
+  onSlowFinish,
+  onRetry,
+  onRebuild,
+  onMenu,
+}: Props) {
   // The bike this run started with. The parent swaps in the damaged bike after
   // a crash; that must not restart the running race.
   const [bike] = useState(bikeProp);
@@ -70,15 +84,15 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
   const wrecked = result?.damage ? isWrecked(result.damage.bike) : false;
 
   // Callbacks change identity every render; keep the latest in a ref for the game loop.
-  const cb = useRef({ onCrash, onFinish });
-  cb.current = { onCrash, onFinish };
+  const cb = useRef({ onCrash, onFinish, onSlowFinish });
+  cb.current = { onCrash, onFinish, onSlowFinish };
 
   // ---- Game loop ----
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const sim = new RaceSim(bike.stats);
-    const renderer = new RaceRenderer(sim);
+    const renderer = new RaceRenderer(sim, CONFIG.timeLimit);
     const engine = new EngineSound();
     let raf = 0;
     let last = performance.now();
@@ -121,12 +135,14 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
               damage = damageBike(bike);
               renderer.breakOff(damage.part);
               playCrash();
-            } else {
+            } else if (sim.time <= CONFIG.timeLimit) {
               playHappyBirthday();
+            } else {
+              playTooSlow();
             }
           }
           endTimer += dt;
-          if (sim.status === "finished") overlay = "🏁";
+          if (sim.status === "finished") overlay = sim.time <= CONFIG.timeLimit ? "🏁" : "⏱";
           if (!reported && endTimer > (sim.status === "crashed" ? 1.2 : 0.6)) {
             reported = true;
             if (sim.status === "crashed") {
@@ -140,9 +156,15 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
               setPhase("crashed");
               cb.current.onCrash(sim.distance, damage!);
             } else {
-              setResult({ line: "You made it!", distance: sim.trackLength, time: sim.time });
-              setPhase("finished");
-              cb.current.onFinish(sim.time);
+              if (sim.time <= CONFIG.timeLimit) {
+                setResult({ line: "You made it!", distance: sim.trackLength, time: sim.time });
+                setPhase("finished");
+                cb.current.onFinish(sim.time);
+              } else {
+                setResult({ line: "Good, but not fast enough!", distance: sim.trackLength, time: sim.time });
+                setPhase("slow");
+                cb.current.onSlowFinish(sim.time, tuneBike(bike));
+              }
             }
           }
         }
@@ -184,6 +206,10 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
         input.current[field] = true;
         e.preventDefault();
         return;
+      }
+      if (phase === "slow") {
+        if (e.code === "Space" || e.code === "KeyR" || e.code === "Enter") onRetry();
+        if (e.code === "KeyB") onRebuild();
       }
       if (phase === "crashed" || phase === "finished") {
         const go = e.code === "Space" || e.code === "KeyR" || e.code === "Enter";
@@ -250,6 +276,27 @@ export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry
           ))}
         </div>
       ))}
+
+      {phase === "slow" && result && (
+        <div className="overlay">
+          <div className="card">
+            <h2>{result.line}</h2>
+            <p>
+              You reached the goal in <b>{result.time.toFixed(1)} s</b>, but the limit is{" "}
+              <b>{CONFIG.timeLimit} s</b>.
+            </p>
+            <p className="good-news">🔧 Your mechanic tuned the bike: every part +{Math.round(TUNE_UP * 100)}%.</p>
+            <div className="row">
+              <button className="primary" onClick={onRetry}>
+                Ride again <kbd>Space</kbd>
+              </button>
+              <button onClick={onRebuild}>
+                Build a new bike <kbd>B</kbd>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {phase === "crashed" && result && (
         <div className="overlay">

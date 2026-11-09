@@ -469,6 +469,16 @@ function songNote(freq: number, t: number, dur: number, vol: number, type: Oscil
   o.stop(t + dur + 0.3);
 }
 
+/** "Almost!" jingle for a finish outside the time limit. */
+export function playTooSlow() {
+  const c = ensureContext();
+  if (!c) return;
+  const t = c.currentTime + 0.05;
+  ["E5", "D5", "C5"].forEach((n, i) => songNote(NOTE[n], t + i * 0.18, 0.16, 0.18, "square", sfxBus));
+  songNote(NOTE["G4"], t + 0.6, 0.5, 0.18, "square", sfxBus);
+  songNote(NOTE["C4"] / 2, t + 0.6, 0.5, 0.3, "triangle", sfxBus);
+}
+
 let songPlaying = false;
 
 /** Plays "Happy Birthday" once, ducking the background music meanwhile. */
