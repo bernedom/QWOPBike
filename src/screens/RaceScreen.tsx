@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { EngineSound } from "../audio";
-import type { Bike } from "../bike";
+import { EngineSound, playCrash, playHappyBirthday } from "../audio";
+import { damageBike, isWrecked, PART_INFO, verdict, type Bike, type CrashDamage } from "../bike";
 import { RaceRenderer } from "../race/render";
 import { DT, RaceSim, type CrashReason, type RaceInput } from "../race/sim";
 
 interface Props {
   bike: Bike;
   attempt: number;
-  onCrash: (distance: number) => void;
+  /** Called after a crash with the (now damaged) bike. */
+  onCrash: (distance: number, damage: CrashDamage) => void;
   onFinish: (time: number) => void;
   onRetry: () => void;
   onRebuild: () => void;
@@ -43,12 +44,21 @@ const CRASH_LINES: Record<CrashReason, string[]> = {
 
 const COUNTDOWN = 2.4;
 
-export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuild, onMenu }: Props) {
+export function RaceScreen({ bike: bikeProp, attempt, onCrash, onFinish, onRetry, onRebuild, onMenu }: Props) {
+  // The bike this run started with. The parent swaps in the damaged bike after
+  // a crash; that must not restart the running race.
+  const [bike] = useState(bikeProp);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const buttonsRef = useRef<Record<string, HTMLButtonElement | null>>({});
   const input = useRef<RaceInput>({ throttle: false, brake: false, leanBack: false, leanForward: false });
   const [phase, setPhase] = useState<Phase>("countdown");
-  const [result, setResult] = useState<{ line: string; distance: number; time: number } | null>(null);
+  const [result, setResult] = useState<{
+    line: string;
+    distance: number;
+    time: number;
+    damage?: CrashDamage;
+  } | null>(null);
+  const wrecked = result?.damage ? isWrecked(result.damage.bike) : false;
 
   // Callbacks change identity every render; keep the latest in a ref for the game loop.
   const cb = useRef({ onCrash, onFinish });
@@ -67,6 +77,8 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
     let countdown = COUNTDOWN;
     let endTimer = 0;
     let reported = false;
+    let damage: CrashDamage | null = null;
+    let ended = false;
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -93,6 +105,17 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
           acc -= DT;
         }
         if (sim.status !== "racing") {
+          if (!ended) {
+            // First frame after the run ended.
+            ended = true;
+            if (sim.status === "crashed") {
+              damage = damageBike(bike);
+              renderer.breakOff(damage.part);
+              playCrash();
+            } else {
+              playHappyBirthday();
+            }
+          }
           endTimer += dt;
           if (sim.status === "finished") overlay = "🏁";
           if (!reported && endTimer > (sim.status === "crashed" ? 1.2 : 0.6)) {
@@ -103,9 +126,10 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
                 line: lines[Math.floor(Math.random() * lines.length)],
                 distance: sim.distance,
                 time: sim.time,
+                damage: damage!,
               });
               setPhase("crashed");
-              cb.current.onCrash(sim.distance);
+              cb.current.onCrash(sim.distance, damage!);
             } else {
               setResult({ line: "You made it!", distance: sim.trackLength, time: sim.time });
               setPhase("finished");
@@ -151,7 +175,8 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
         return;
       }
       if (phase === "crashed" || phase === "finished") {
-        if (phase === "crashed" && (e.code === "Space" || e.code === "KeyR" || e.code === "Enter")) onRetry();
+        const go = e.code === "Space" || e.code === "KeyR" || e.code === "Enter";
+        if (phase === "crashed" && go) (wrecked ? onRebuild : onRetry)();
         if (phase === "crashed" && e.code === "KeyB") onRebuild();
       }
       if (e.code === "Escape") onMenu();
@@ -171,7 +196,7 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [phase, onRetry, onRebuild, onMenu]);
+  }, [phase, wrecked, onRetry, onRebuild, onMenu]);
 
   const touch = (field: keyof RaceInput, on: boolean) => (e: React.PointerEvent) => {
     e.preventDefault();
@@ -221,14 +246,31 @@ export function RaceScreen({ bike, attempt, onCrash, onFinish, onRetry, onRebuil
             <p>
               You made it <b>{result.distance.toFixed(0)} m</b> in {result.time.toFixed(1)} s.
             </p>
-            <div className="row">
-              <button className="primary" onClick={onRetry}>
-                Ride again <kbd>Space</kbd>
-              </button>
-              <button onClick={onRebuild}>
-                Build a new bike <kbd>B</kbd>
-              </button>
-            </div>
+            {result.damage?.part && (
+              <p className="damage">
+                💥 Your <b>{PART_INFO[result.damage.part].name.toLowerCase()}</b> came loose:{" "}
+                {verdict(result.damage.before)} → <span className="warn">{verdict(result.damage.after)}</span>
+              </p>
+            )}
+            {wrecked ? (
+              <>
+                <p className="warn">Your bike is completely wrecked. Time to build a new one!</p>
+                <div className="row">
+                  <button className="primary" onClick={onRebuild}>
+                    Build a new bike <kbd>Space</kbd>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="row">
+                <button className="primary" onClick={onRetry}>
+                  Ride again <kbd>Space</kbd>
+                </button>
+                <button onClick={onRebuild}>
+                  Build a new bike <kbd>B</kbd>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

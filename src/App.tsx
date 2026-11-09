@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { isMuted, onMuteChange, setMuted } from "./audio";
-import { buildBike, PARTS, type Bike, type PartScores } from "./bike";
+import { buildBike, isWrecked, PARTS, type Bike, type CrashDamage, type PartScores } from "./bike";
 import { AssemblyScreen } from "./screens/AssemblyScreen";
 import { RaceScreen } from "./screens/RaceScreen";
 import { RevealScreen } from "./screens/RevealScreen";
@@ -72,10 +72,12 @@ function Screens() {
   }, []);
 
   const startRace = useCallback(() => {
+    // A completely wrecked bike can't be ridden: off to the garage.
+    if (bike && isWrecked(bike)) return setScreen("assembly");
     updateStats((s) => ({ ...s, attempts: s.attempts + 1 }));
     setRaceId((id) => id + 1);
     setScreen("race");
-  }, [updateStats]);
+  }, [bike, updateStats]);
 
   const toTitle = useCallback(() => setScreen("title"), []);
   const toAssembly = useCallback(() => setScreen("assembly"), []);
@@ -91,7 +93,12 @@ function Screens() {
   );
 
   const onCrash = useCallback(
-    (distance: number) => updateStats((s) => ({ ...s, bestDistance: Math.max(s.bestDistance, distance) })),
+    (distance: number, damage: CrashDamage) => {
+      updateStats((s) => ({ ...s, bestDistance: Math.max(s.bestDistance, distance) }));
+      // Every crash knocks something off; the next ride uses the damaged bike.
+      setBike(damage.bike);
+      saveBike(damage.bike);
+    },
     [updateStats],
   );
 

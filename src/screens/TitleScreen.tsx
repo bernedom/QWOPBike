@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { Bike } from "../bike";
+import { isWrecked, type Bike } from "../bike";
 import { CONFIG } from "../config";
 import type { PlayerStats } from "../storage";
 
@@ -12,7 +12,9 @@ interface Props {
   onReset: () => void;
 }
 
-export function TitleScreen({ bike, stats, onAssemble, onRace, onReveal, onReset }: Props) {
+export function TitleScreen({ bike: savedBike, stats, onAssemble, onRace, onReveal, onReset }: Props) {
+  const wrecked = savedBike !== null && isWrecked(savedBike);
+  const bike = wrecked ? null : savedBike;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === "Space" || e.code === "Enter") (bike ? onRace : onAssemble)();
@@ -48,9 +50,11 @@ export function TitleScreen({ bike, stats, onAssemble, onRace, onReveal, onReset
       <p className="muted small">
         Build your bike first. The better you put it together, the less it fights you.
         <br />
-        Hit your head or flip over and you start again from the beginning.
+        Hit your head or flip over and you start again from the beginning, and every crash knocks a part
+        loose. Once everything is broken, you need a new bike.
       </p>
 
+      {wrecked && <p className="warn">Your bike is a wreck. Build a new one!</p>}
       <div className="row">
         {bike ? (
           <>

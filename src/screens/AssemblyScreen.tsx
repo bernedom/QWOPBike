@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   buildBike,
   HANDLEBAR_SWAP_THRESHOLD,
+  isWrecked,
   PART_INFO,
   PARTS,
   verdict,
@@ -142,7 +143,7 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
       if (e.repeat) return;
       if (e.code === "Escape") return onMenu();
       if (bike) {
-        if (e.code === "Space" || e.code === "Enter") onRide();
+        if (e.code === "Space" || e.code === "Enter") (isWrecked(bike) ? restart : onRide)();
         if (e.code === "KeyB") restart();
       } else if (e.code === "Space" || e.code === "Enter") {
         e.preventDefault();
@@ -206,10 +207,13 @@ export function AssemblyScreen({ onBuilt, onRide, onMenu }: Props) {
           {bike.scores.handlebar < HANDLEBAR_SWAP_THRESHOLD && (
             <p className="warn">⚠ The handlebar is on backwards: O and P are swapped!</p>
           )}
+          {isWrecked(bike) && <p className="warn">Nothing holds together. This bike won't ride, try again!</p>}
           <div className="row">
-            <button className="primary" onClick={onRide}>
-              Ride it! <kbd>Space</kbd>
-            </button>
+            {!isWrecked(bike) && (
+              <button className="primary" onClick={onRide}>
+                Ride it! <kbd>Space</kbd>
+              </button>
+            )}
             <button onClick={restart}>
               Rebuild <kbd>B</kbd>
             </button>

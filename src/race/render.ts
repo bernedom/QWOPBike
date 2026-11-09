@@ -2,6 +2,7 @@
  * Canvas renderer for the race. Purely visual: reads the sim, never changes it.
  */
 import type { Body } from "planck";
+import type { PartId } from "../bike";
 import { type RaceSim, WHEEL_RADIUS } from "./sim";
 import { groundY } from "./track";
 
@@ -14,6 +15,22 @@ interface Particle {
   max: number;
   size: number;
   color: string;
+}
+
+type DebrisKind = "wheel" | "engine" | "link" | "spring" | "bar" | "bolt";
+
+/** A loose piece of bike flying off after a crash (simple ballistic + bounce). */
+interface Debris {
+  kind: DebrisKind;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  spin: number;
+  /** Collision radius above the ground. */
+  r: number;
+  smoke: boolean;
 }
 
 const C = {
@@ -40,6 +57,10 @@ const C = {
 
 export class RaceRenderer {
   private particles: Particle[] = [];
+  private debris: Debris[] = [];
+  /** The part that broke off in this run's crash; it's no longer drawn on the bike. */
+  private lost: PartId | null = null;
+  private shake = 0;
   private camX = 0;
   private camY = 0;
   private sim: RaceSim;
@@ -64,9 +85,12 @@ export class RaceRenderer {
     this.camX += (tx - this.camX) * k;
     this.camY += (ty - this.camY) * k;
 
+    this.shake = Math.max(0, this.shake - dt * 2.5);
+    const sx = (Math.random() - 0.5) * this.shake * scale * 0.5;
+    const sy = (Math.random() - 0.5) * this.shake * scale * 0.5;
     const toScreen = (x: number, y: number): [number, number] => [
-      w / 2 + (x - this.camX) * scale,
-      h * 0.58 - (y - this.camY) * scale,
+      w / 2 + (x - this.camX) * scale + sx,
+      h * 0.58 - (y - this.camY) * scale + sy,
     ];
 
     this.drawSky(ctx, w, h);
@@ -78,8 +102,10 @@ export class RaceRenderer {
     this.drawFinish(ctx, toScreen, scale);
 
     this.updateParticles(dt);
+    this.updateDebris(dt);
     this.drawParticles(ctx, toScreen, scale);
     this.drawBike(ctx, toScreen, scale);
+    this.drawDebris(ctx, toScreen, scale);
 
     this.drawHud(ctx, w, h);
     if (overlay) this.drawBigText(ctx, w, h, overlay);
@@ -232,10 +258,12 @@ export class RaceRenderer {
 
     // Swingarm & fork (drawn under the frame)
     line(local(-0.15, -0.05), toScreen(rear.x, rear.y), scale * 0.09, "#555");
-    line(local(0.62, 0.3), toScreen(front.x, front.y), scale * 0.08, "#888");
+    if (this.lost !== "suspension" && this.lost !== "wheels") {
+      line(local(0.62, 0.3), toScreen(front.x, front.y), scale * 0.08, "#888");
+    }
 
     this.drawWheel(ctx, sim.rearWheel, toScreen, scale);
-    this.drawWheel(ctx, sim.frontWheel, toScreen, scale);
+    if (this.lost !== "wheels") this.drawWheel(ctx, sim.frontWheel, toScreen, scale);
 
     // Frame body
     ctx.fillStyle = C.frame;
@@ -256,27 +284,30 @@ export class RaceRenderer {
     ctx.fill();
     ctx.stroke();
     // Engine block
-    ctx.fillStyle = "#3b3b3b";
-    ctx.beginPath();
-    [
-      [-0.1, 0.12],
-      [0.3, 0.14],
-      [0.25, -0.12],
-      [-0.08, -0.1],
-    ].forEach(([x, y], i) => (i ? ctx.lineTo(...local(x, y)) : ctx.moveTo(...local(x, y))));
-    ctx.closePath();
-    ctx.fill();
+    if (this.lost !== "engine") {
+      ctx.fillStyle = "#3b3b3b";
+      ctx.beginPath();
+      [
+        [-0.1, 0.12],
+        [0.3, 0.14],
+        [0.25, -0.12],
+        [-0.08, -0.1],
+      ].forEach(([x, y], i) => (i ? ctx.lineTo(...local(x, y)) : ctx.moveTo(...local(x, y))));
+      ctx.closePath();
+      ctx.fill();
+    }
     // Seat
     line(local(-0.7, 0.36), local(0.05, 0.36), scale * 0.1, "#222");
     // Handlebar
-    line(local(0.58, 0.38), local(0.5, 0.58), scale * 0.05, "#333");
+    if (this.lost !== "handlebar") line(local(0.58, 0.38), local(0.5, 0.58), scale * 0.05, "#333");
 
     // Rider (posture follows the lean input)
     const lean = sim.lean * 0.12;
     const hip = local(-0.2, 0.45);
     const shoulder = local(-0.02 - lean, 0.88);
     const head = local(0.04 - lean * 1.2, 1.08);
-    const hand = local(0.5, 0.58);
+    // Without a handlebar the rider flails instead of holding on.
+    const hand = this.lost === "handlebar" ? local(0.35, 1.0 + Math.sin(sim.time * 20) * 0.1) : local(0.5, 0.58);
     const knee = local(0.22, 0.55);
     const foot = local(0.05, 0.05);
     const limb = scale * 0.11;
@@ -381,6 +412,164 @@ export class RaceRenderer {
     ctx.beginPath();
     ctx.arc(x, y, r * 0.12, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  // ---------- crash debris ----------
+
+  /** Crash effect: `part` flies off the bike, together with bolts, sparks and dirt. */
+  breakOff(part: PartId | null) {
+    const sim = this.sim;
+    const ch = sim.chassis;
+    const v = ch.getLinearVelocity();
+    const at = (lx: number, ly: number) => ch.getWorldPoint({ x: lx, y: ly });
+    const fling = (kind: DebrisKind, p: { x: number; y: number }, r: number, smoke = false, power = 1) => {
+      this.debris.push({
+        kind,
+        x: p.x,
+        y: p.y,
+        vx: v.x * 0.6 + (Math.random() - 0.3) * 5 * power,
+        vy: 3 + Math.random() * 4 * power,
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 18,
+        r,
+        smoke,
+      });
+    };
+
+    this.lost = part;
+    this.shake = 1;
+    switch (part) {
+      case "wheels":
+        fling("wheel", sim.frontWheel.getPosition(), WHEEL_RADIUS);
+        break;
+      case "engine":
+        fling("engine", at(0.1, 0), 0.15, true);
+        break;
+      case "chain":
+        for (let i = 0; i < 9; i++) fling("link", at(-0.6 + i * 0.08, 0.05), 0.03, false, 1.4);
+        break;
+      case "suspension":
+        fling("spring", at(0.65, 0.15), 0.1);
+        fling("spring", at(-0.3, 0), 0.1);
+        break;
+      case "handlebar":
+        fling("bar", at(0.55, 0.5), 0.06);
+        break;
+    }
+    for (let i = 0; i < 6; i++) fling("bolt", at((Math.random() - 0.5) * 1.2, 0.1), 0.03, false, 1.5);
+
+    const c = at(0, 0);
+    for (let i = 0; i < 24; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 5;
+      this.emit(c.x, c.y, Math.cos(a) * sp, Math.abs(Math.sin(a)) * sp, i % 3 ? "#ffd23f" : "#ff7a1a", 0.04, 0.5);
+    }
+    for (let i = 0; i < 18; i++) {
+      this.emit(c.x, c.y - 0.3, (Math.random() - 0.5) * 6, Math.random() * 2.5, C.dirtTop, 0.12, 1.1);
+    }
+  }
+
+  private updateDebris(dt: number) {
+    const track = this.sim.track;
+    for (const d of this.debris) {
+      d.vy -= 10 * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.angle += d.spin * dt;
+      const g = groundY(track, d.x);
+      if (d.y - d.r < g) {
+        d.y = g + d.r;
+        if (d.vy < 0) d.vy = Math.abs(d.vy) < 1 ? 0 : -d.vy * 0.4;
+        d.vx *= 0.8;
+        d.spin *= 0.7;
+        if (d.kind === "wheel") d.spin = -d.vx / d.r; // roll
+      }
+      if (d.smoke && Math.random() < 0.4) this.emit(d.x, d.y, -0.3, 1.2, "#333", 0.15, 1.2);
+    }
+    // Hard cap so a long wait after a crash doesn't pile up.
+    if (this.debris.length > 80) this.debris.splice(0, this.debris.length - 80);
+  }
+
+  private drawDebris(
+    ctx: CanvasRenderingContext2D,
+    toScreen: (x: number, y: number) => [number, number],
+    scale: number,
+  ) {
+    for (const d of this.debris) {
+      const [x, y] = toScreen(d.x, d.y);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-d.angle);
+      const u = scale;
+      switch (d.kind) {
+        case "wheel": {
+          const r = WHEEL_RADIUS * u;
+          ctx.fillStyle = C.tyre;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = C.rim;
+          ctx.lineWidth = Math.max(1, u * 0.03);
+          ctx.beginPath();
+          ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            ctx.moveTo(0, 0);
+            ctx.lineTo(Math.cos(a) * r * 0.7, Math.sin(a) * r * 0.7);
+          }
+          ctx.stroke();
+          break;
+        }
+        case "engine":
+          ctx.fillStyle = "#3b3b3b";
+          ctx.fillRect(-0.2 * u, -0.13 * u, 0.4 * u, 0.26 * u);
+          ctx.fillStyle = "#555";
+          for (let i = 0; i < 4; i++) ctx.fillRect((-0.17 + i * 0.09) * u, -0.2 * u, 0.05 * u, 0.08 * u);
+          break;
+        case "link":
+          ctx.strokeStyle = "#777";
+          ctx.lineWidth = Math.max(1, u * 0.02);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 0.05 * u, 0.025 * u, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+        case "spring": {
+          ctx.strokeStyle = "#e8c340";
+          ctx.lineWidth = Math.max(1.5, u * 0.03);
+          ctx.beginPath();
+          for (let i = 0; i <= 8; i++) {
+            const px = (-0.18 + i * 0.045) * u;
+            const py = (i % 2 ? 0.06 : -0.06) * u;
+            if (i) ctx.lineTo(px, py);
+            else ctx.moveTo(px, py);
+          }
+          ctx.stroke();
+          break;
+        }
+        case "bar":
+          ctx.strokeStyle = "#333";
+          ctx.lineCap = "round";
+          ctx.lineWidth = u * 0.05;
+          ctx.beginPath();
+          ctx.moveTo(-0.25 * u, 0);
+          ctx.lineTo(0.25 * u, 0);
+          ctx.stroke();
+          ctx.strokeStyle = "#111";
+          ctx.lineWidth = u * 0.08;
+          ctx.beginPath();
+          ctx.moveTo(-0.25 * u, 0);
+          ctx.lineTo(-0.17 * u, 0);
+          ctx.moveTo(0.17 * u, 0);
+          ctx.lineTo(0.25 * u, 0);
+          ctx.stroke();
+          break;
+        case "bolt":
+          ctx.fillStyle = "#aaa";
+          ctx.fillRect(-0.03 * u, -0.03 * u, 0.06 * u, 0.06 * u);
+          break;
+      }
+      ctx.restore();
+    }
   }
 
   // ---------- particles ----------

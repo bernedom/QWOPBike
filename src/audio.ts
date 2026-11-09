@@ -4,6 +4,8 @@
  * - Background music: a procedural four-on-the-floor house loop (~124 BPM).
  * - Engine: a pair of detuned oscillators whose pitch follows the rear wheel
  *   and whose volume/brightness follows the throttle, plus a "pop" on sputter.
+ * - Crash: thump + metal clang + rattling bits.
+ * - Finish: "Happy Birthday" (the melody is public domain).
  *
  * Browsers only allow audio after a user gesture, so the context is created
  * lazily on the first key press / tap (see `installAudioUnlock`).
@@ -32,6 +34,7 @@ let ctx: AudioContext | null = null;
 let master: GainNode;
 let musicBus: GainNode;
 let engineBus: GainNode;
+let sfxBus: GainNode;
 let noise: AudioBuffer;
 let muted = readMuted();
 const listeners = new Set<(muted: boolean) => void>();
@@ -66,6 +69,10 @@ function ensureContext(): AudioContext | null {
   engineBus = ctx.createGain();
   engineBus.gain.value = ENGINE_VOLUME;
   engineBus.connect(master);
+
+  sfxBus = ctx.createGain();
+  sfxBus.gain.value = 0.8;
+  sfxBus.connect(master);
 
   noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
   const data = noise.getChannelData(0);
@@ -332,4 +339,137 @@ function backfire() {
   src.connect(f).connect(g).connect(engineBus);
   src.start(t, Math.random() * 0.5);
   src.stop(t + 0.15);
+}
+
+// ---------------------------------------------------------------- crash
+
+function noiseBurst(t: number, dur: number, vol: number, type: BiquadFilterType, freq: number, q = 1) {
+  const c = ctx!;
+  const src = c.createBufferSource();
+  src.buffer = noise;
+  const f = c.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = freq;
+  f.Q.value = q;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f).connect(g).connect(sfxBus);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + dur + 0.02);
+}
+
+/** Metallic "clang": a few inharmonic partials ringing out. */
+function clang(t: number, base: number, vol: number, dur: number) {
+  const c = ctx!;
+  const g = c.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  g.connect(sfxBus);
+  for (const ratio of [1, 2.76, 5.4, 8.93]) {
+    const o = c.createOscillator();
+    o.type = "sine";
+    o.frequency.value = base * ratio;
+    o.connect(g);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+}
+
+export function playCrash() {
+  const c = ensureContext();
+  if (!c) return;
+  const t = c.currentTime;
+  // Body hitting the dirt.
+  const thump = c.createOscillator();
+  const tg = c.createGain();
+  thump.frequency.setValueAtTime(110, t);
+  thump.frequency.exponentialRampToValueAtTime(35, t + 0.25);
+  tg.gain.setValueAtTime(1.2, t);
+  tg.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+  thump.connect(tg).connect(sfxBus);
+  thump.start(t);
+  thump.stop(t + 0.45);
+  noiseBurst(t, 0.35, 0.9, "lowpass", 900);
+  // Metal.
+  clang(t + 0.01, 310 + Math.random() * 80, 0.35, 0.6);
+  clang(t + 0.09, 520 + Math.random() * 120, 0.2, 0.4);
+  // Bits and bolts bouncing away.
+  for (let i = 0; i < 7; i++) {
+    const dt = 0.15 + i * 0.07 + Math.random() * 0.06;
+    noiseBurst(t + dt, 0.04, 0.35 * (1 - i / 9), "bandpass", 3000 + Math.random() * 3000, 4);
+    if (i % 2 === 0) clang(t + dt, 1200 + Math.random() * 900, 0.06, 0.12);
+  }
+}
+
+// ---------------------------------------------------------------- happy birthday
+
+const NOTE: Record<string, number> = {
+  F3: 174.61, G3: 196, A3: 220, B3: 246.94, C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23,
+  G4: 392, A4: 440, "A#4": 466.16, B4: 493.88, C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99,
+};
+
+/** [note, beats, chord that starts on this note]. */
+const MELODY: [string, number, string[]?][] = [
+  ["G4", 0.75], ["G4", 0.25], ["A4", 1, ["C4", "E4", "G4"]], ["G4", 1], ["C5", 1], ["B4", 2, ["G3", "B3", "D4"]],
+  ["G4", 0.75], ["G4", 0.25], ["A4", 1, ["G3", "B3", "F4"]], ["G4", 1], ["D5", 1], ["C5", 2, ["C4", "E4", "G4"]],
+  ["G4", 0.75], ["G4", 0.25], ["G5", 1, ["C4", "E4", "A#4"]], ["E5", 1], ["C5", 1, ["F3", "A3", "C4"]], ["B4", 1],
+  ["A4", 2],
+  ["F5", 0.75], ["F5", 0.25], ["E5", 1, ["C4", "E4", "G4"]], ["C5", 1], ["D5", 1, ["G3", "B3", "F4"]],
+  ["C5", 3, ["C4", "E4", "G4"]],
+];
+const SONG_BEAT = 60 / 112;
+
+function songNote(freq: number, t: number, dur: number, vol: number, type: OscillatorType, out: AudioNode) {
+  const c = ctx!;
+  const o = c.createOscillator();
+  o.type = type;
+  o.frequency.value = freq;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.015);
+  g.gain.setTargetAtTime(vol * 0.6, t + 0.05, 0.1);
+  g.gain.setTargetAtTime(0.0001, t + dur * 0.9, 0.05);
+  o.connect(g).connect(out);
+  o.start(t);
+  o.stop(t + dur + 0.3);
+}
+
+let songPlaying = false;
+
+/** Plays "Happy Birthday" once, ducking the background music meanwhile. */
+export function playHappyBirthday() {
+  const c = ensureContext();
+  if (!c || songPlaying) return;
+  songPlaying = true;
+  const t0 = c.currentTime + 0.3;
+  const total = MELODY.reduce((sum, [, b]) => sum + b, 0) * SONG_BEAT;
+
+  musicBus.gain.setTargetAtTime(0, c.currentTime, 0.1);
+  musicBus.gain.setTargetAtTime(MUSIC_VOLUME, t0 + total + 0.5, 0.8);
+
+  const lead = c.createBiquadFilter();
+  lead.type = "lowpass";
+  lead.frequency.value = 3000;
+  lead.connect(sfxBus);
+
+  // Find how long each chord lasts (until the next chord, or the end).
+  const starts: { t: number; chord: string[] }[] = [];
+  let t = t0;
+  for (const [n, beats, chord] of MELODY) {
+    const dur = beats * SONG_BEAT;
+    songNote(NOTE[n], t, dur, 0.22, "square", lead);
+    songNote(NOTE[n] * 2, t, dur, 0.06, "triangle", sfxBus); // sparkle an octave up
+    if (chord) starts.push({ t, chord });
+    t += dur;
+  }
+  // Accompaniment: bass on the chord change, then chord "oom-pah-pah" on each beat.
+  starts.forEach(({ t: ts, chord }, i) => {
+    const end = starts[i + 1]?.t ?? t0 + total;
+    songNote(NOTE[chord[0]] / 2, ts, SONG_BEAT * 0.9, 0.3, "triangle", sfxBus);
+    for (let tb = ts + SONG_BEAT; tb < end - 0.01; tb += SONG_BEAT) {
+      for (const n of chord) songNote(NOTE[n], tb, SONG_BEAT * 0.6, 0.05, "triangle", sfxBus);
+    }
+  });
+  window.setTimeout(() => (songPlaying = false), (total + 1) * 1000);
 }

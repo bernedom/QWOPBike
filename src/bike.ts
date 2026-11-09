@@ -111,3 +111,33 @@ export function verdict(score: number): string {
   if (score >= HANDLEBAR_SWAP_THRESHOLD) return "Yikes";
   return "Disaster";
 }
+
+// ---------------------------------------------------------------- crash damage
+
+/** How much quality a part loses when it falls off in a crash. */
+export const CRASH_DAMAGE = 0.25;
+
+/** Every part is at the minimum: the bike can't be ridden any more. */
+export function isWrecked(bike: Bike): boolean {
+  return PARTS.every((p) => bike.scores[p] <= 0);
+}
+
+export interface CrashDamage {
+  /** The bike after the crash. */
+  bike: Bike;
+  /** The part that fell off (null if the bike was already a wreck). */
+  part: PartId | null;
+  before: number;
+  after: number;
+}
+
+/** A crash knocks a random still-working part off and makes it worse. */
+export function damageBike(bike: Bike, rng: () => number = Math.random): CrashDamage {
+  const candidates = PARTS.filter((p) => bike.scores[p] > 0);
+  if (candidates.length === 0) return { bike, part: null, before: 0, after: 0 };
+  const part = candidates[Math.floor(rng() * candidates.length)];
+  const before = bike.scores[part];
+  const after = Math.max(0, before - CRASH_DAMAGE);
+  const scores = { ...bike.scores, [part]: after };
+  return { bike: { ...buildBike(scores), builtAt: bike.builtAt }, part, before, after };
+}
